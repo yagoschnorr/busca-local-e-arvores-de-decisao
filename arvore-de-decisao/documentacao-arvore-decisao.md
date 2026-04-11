@@ -1,6 +1,6 @@
 # Árvore de Decisão — Previsão de Churn em Telecomunicações
 
-Implementação de árvores de decisão (ID3, C4.5 e CART) para classificação do status de clientes de uma operadora de telecomunicações. Todo o pipeline está em [`model.ipynb`](model.ipynb) e utiliza o dataset [`data/telecom_customer_churn.csv`](data/telecom_customer_churn.csv).
+Implementação de árvores de decisão (ID3 e C4.5) para classificação do status de clientes de uma operadora de telecomunicações. Todo o pipeline está em [`model.ipynb`](model.ipynb) e utiliza o dataset [`data/telecom_customer_churn.csv`](data/telecom_customer_churn.csv) retirado do Kaggle no link: https://www.kaggle.com/datasets/shilongzhuang/telecom-customer-churn-by-maven-analytics.
 
 ---
 
@@ -47,7 +47,7 @@ O notebook está organizado em 10 seções, seguindo um fluxo completo de modela
 5. Feature Engineering (remoção, encoding, seleção, split)
 6. Árvore ID3 (entropia, sem poda)
 7. Árvore C4.5 (entropia + Cost-Complexity Pruning)
-8. Comparação entre 4 configurações (ID3, C4.5, CART, CART podado)
+8. Comparação entre as duas configurações (ID3 sem poda vs C4.5 com poda)
 9. Discussão sobre overfitting, poda e validação
 10. Interpretação do modelo (importâncias e regras)
 ```
@@ -153,9 +153,9 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 ---
 
-## 7. Os três algoritmos implementados
+## 7. Os algoritmos implementados
 
-O trabalho compara os três algoritmos clássicos de árvores de decisão. No scikit-learn não existem implementações nativas do ID3 e do C4.5 — eles são **simulados** via `DecisionTreeClassifier` com configurações específicas.
+O trabalho compara dois algoritmos clássicos de árvores de decisão: **ID3** e **C4.5**. No scikit-learn não existem implementações nativas desses algoritmos — eles são **simulados** via `DecisionTreeClassifier` com configurações específicas.
 
 ### 7.1 ID3 (Iterative Dichotomiser 3)
 
@@ -178,7 +178,7 @@ Usamos `criterion='entropy'` (que implementa ganho de informação) e **nenhuma 
 
 **Teoria**: Evolução do ID3 com melhorias importantes:
 
-- **Tratamento de atributos contínuos**: avalia todos os limiares possíveis (pontos médios entre valores ordenados) e escolhe o que maximiza o ganho. O CART do scikit-learn já faz isso nativamente.
+- **Tratamento de atributos contínuos**: avalia todos os limiares possíveis (pontos médios entre valores ordenados) e escolhe o que maximiza o ganho. O `DecisionTreeClassifier` do scikit-learn já faz isso nativamente.
 - **Poda pós-construção**: constrói a árvore completa e depois remove ramos que não contribuem significativamente para a acurácia, reduzindo overfitting.
 - **Gain Ratio** (opcional): normaliza o ganho de informação pela entropia intrínseca do atributo, penalizando atributos com muitos valores — não implementado aqui pois o scikit-learn não oferece Gain Ratio.
 
@@ -192,17 +192,7 @@ tree_c45 = DecisionTreeClassifier(
 )
 ```
 
-### 7.3 CART (Classification and Regression Trees)
-
-**Teoria**: Usa o **Índice de Gini** como critério de impureza.
-
-- **Gini**: `G(S) = 1 - Σ pᵢ²`. Mede a probabilidade de classificar incorretamente um elemento escolhido aleatoriamente. Também varia de 0 (puro) a um máximo dependente do número de classes.
-- Computacionalmente mais barato que entropia (evita `log₂`), com resultados tipicamente similares.
-- Sempre gera árvores binárias.
-
-**Implementação**: `criterion='gini'`, com duas variantes — sem poda e com `ccp_alpha` ótimo.
-
-### 7.4 Escolha do `ccp_alpha` ótimo (Cost-Complexity Pruning Path)
+### 7.3 Escolha do `ccp_alpha` ótimo (Cost-Complexity Pruning Path)
 
 A parte mais cuidadosa da implementação está em como escolher **quanto** podar. O processo tem 3 passos:
 
@@ -234,20 +224,16 @@ best_alpha = alpha_candidates[np.argmax(cv_means)]
 
 O alpha que maximiza a acurácia média do CV é usado para treinar a árvore final, e **só então** o teste é usado para medir o desempenho real de generalização.
 
-O mesmo procedimento é repetido para o critério Gini, gerando a variante "CART podado".
-
 ---
 
 ## 8. Comparação entre configurações
 
-O trabalho avalia quatro configurações lado a lado:
+A lauda exige comparação entre **pelo menos duas configurações**. O trabalho avalia as duas variantes lado a lado:
 
-| Config | Critério | Poda                   | Simula        |
-| ------ | -------- | ---------------------- | ------------- |
-| A      | Entropy  | Sem                    | ID3           |
-| B      | Entropy  | Com (`ccp_alpha` ótimo) | C4.5          |
-| C      | Gini     | Sem                    | CART          |
-| D      | Gini     | Com (`ccp_alpha` ótimo) | CART podado   |
+| Config | Critério | Poda                    | Simula |
+| ------ | -------- | ----------------------- | ------ |
+| A      | Entropy  | Sem                     | ID3    |
+| B      | Entropy  | Com (`ccp_alpha` ótimo) | C4.5   |
 
 Para cada modelo são computadas:
 
@@ -258,7 +244,7 @@ Para cada modelo são computadas:
 
 ### 8.1 Curvas de validação por profundidade
 
-Independente do CCP, também se varia `max_depth` de 1 a 30 para entropy e gini, plotando a curva treino-vs-teste. A curva mostra visualmente:
+Independente do CCP, também se varia `max_depth` de 1 a 30 (com `criterion='entropy'`), plotando a curva treino-vs-teste. A curva mostra visualmente:
 
 - **Profundidades baixas** → underfitting (ambas as acurácias baixas).
 - **Profundidades altas** → treino sobe para 100%, teste estagna ou cai (overfitting).
@@ -311,7 +297,7 @@ Essas regras podem ser diretamente comunicadas ao time de negócio.
 
 ### 10.3 Limiares para atributos contínuos
 
-Para cada atributo numérico, o scikit-learn testa todos os pontos médios entre valores consecutivos ordenados e escolhe o limiar que maximiza o critério (entropia ou Gini) — comportamento equivalente ao C4.5. Por isso os nós mostram condições como `Tenure in Months <= 6.5`: o algoritmo descobriu que **6 meses é o ponto de corte ótimo** para separar os grupos naquele ramo.
+Para cada atributo numérico, o scikit-learn testa todos os pontos médios entre valores consecutivos ordenados e escolhe o limiar que maximiza o ganho de informação (entropia) — comportamento equivalente ao C4.5. Por isso os nós mostram condições como `Tenure in Months <= 6.5`: o algoritmo descobriu que **6 meses é o ponto de corte ótimo** para separar os grupos naquele ramo.
 
 ---
 
